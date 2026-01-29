@@ -1,9 +1,10 @@
-name: Hourly 15 USD & EUR to CNY Rate Push
+name: Every 15 & EUR to CNY Rate Push
 
 on:
   schedule:
-    - cron: '15 * * * *'         # UTC 每小时15分 ≈ 北京时间每小时23分
-  workflow_dispatch:             # 支持手动立即测试
+    # '*/15' 表示每隔 15 分钟触发一次 (0, 15, 30, 45分)
+    - cron: '*/15 * * * *'
+  workflow_dispatch: # 保留手动测试按钮
 
 jobs:
   push:
@@ -26,41 +27,44 @@ jobs:
         run: |
           python - << 'EOF'
           import requests
-          import json
           import os
           from urllib.parse import quote
 
           bark_key = os.environ.get('BARK_KEY')
           if not bark_key:
-              print("BARK_KEY 未注入，检查 GitHub Secrets")
+              print("错误: BARK_KEY 未设置")
               exit(1)
 
           try:
+              # 获取汇率
               api_url = "https://open.er-api.com/v6/latest/USD"
-              resp = requests.get(api_url, timeout=10)
+              resp = requests.get(api_url, timeout=15)
               data = resp.json()
 
               if data.get('result') == 'success':
                   rates = data['rates']
                   usd_cny = round(rates.get('CNY', 0), 4)
                   eur_usd = rates.get('EUR', 0)
+                  # 交叉汇率计算
                   eur_cny = round(rates['CNY'] / eur_usd, 4) if eur_usd != 0 else 0
-                  title = "美元 & 欧元汇率更新"
-                  body = f"1 USD = {usd_cny} CNY\n1 EUR = {eur_cny} CNY"
+                  
+                  title = "实时汇率播报"
+                  body = f"🇺🇸 1 USD = {usd_cny} CNY\n🇪🇺 1 EUR = {eur_cny} CNY"
               else:
-                  title = "汇率 API 异常"
-                  body = "获取失败，请稍后重试"
+                  title = "汇率接口提醒"
+                  body = "数据源更新失败，请检查"
           except Exception as e:
-              title = "脚本错误"
-              body = f"异常: {str(e)[:60]}"
+              title = "脚本执行报错"
+              body = f"错误详情: {str(e)[:50]}"
 
+          # 编码处理
           encoded_title = quote(title)
           encoded_body = quote(body)
 
-          sound = "minuet"
-          bark_url = f"https://api.day.app/{bark_key}/{encoded_body}?title={encoded_title}&sound={sound}&badge=1&group=汇率&autoCopy=1"
-          resp = requests.get(bark_url)
-          print("推送请求发送，状态码:", resp.status_code)
-          print("标题:", title)
-          print("内容:", body)
+          # 构建 Bark URL (将 body 放在参数中更稳定)
+          # 加上了自动复制功能(autoCopy)和分组(group)
+          bark_url = f"https://api.day.app/{bark_key}?title={encoded_title}&body={encoded_body}&sound=minuet&group=Finance&autoCopy=1"
+          
+          r = requests.get(bark_url)
+          print(f"推送结果: {r.status_code}, 内容: {body}")
           EOF
