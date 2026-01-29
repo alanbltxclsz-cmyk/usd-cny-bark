@@ -1,4 +1,4 @@
-name: Hourly USD & EUR to CNY Rate Push
+name: Hourly 15 USD & EUR to CNY Rate Push
 
 on:
   schedule:
