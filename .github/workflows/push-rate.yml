@@ -4,7 +4,7 @@ on:
   schedule:
     # 每 15 分钟运行一次
     - cron: '*/15 * * * *'
-  workflow_dispatch: 
+  workflow_dispatch: # 支持手动点击按钮立即测试
 
 jobs:
   push_rate:
@@ -23,6 +23,7 @@ jobs:
 
       - name: Get Rate and Push
         env:
+          # 这里的变量名必须与你在 GitHub Secrets 中设置的完全一致
           BARK_KEY: ${{ secrets.BARK_KEY }}
           EX_KEY: ${{ secrets.EX_KEY }}
         run: |
@@ -34,13 +35,13 @@ jobs:
 
           def get_rate():
               api_key = os.environ.get('EX_KEY')
-              # 使用你测试成功的那个接口地址
+              # 使用你测试成功的 exchangerate.host 接口
               url = f"http://api.exchangerate.host/live?access_key={api_key}&source=USD&currencies=CNY,EUR"
               try:
                   resp = requests.get(url, timeout=20)
                   data = resp.json()
                   if data.get('success'):
-                      # 该接口返回的汇率在 quotes 字段下
+                      # 解析 quotes 字段下的汇率数据
                       quotes = data['quotes']
                       usd_cny = quotes.get('USDCNY')
                       eur_usd_rate = quotes.get('USDEUR')
@@ -54,11 +55,15 @@ jobs:
                   print(f"网络请求失败: {e}")
               return None, None
 
+          # 1. 获取环境变量
           bark_key = os.environ.get('BARK_KEY')
+          # 获取北京时间 (UTC+8)
           bj_time = (datetime.utcnow() + timedelta(hours=8)).strftime("%H:%M")
 
+          # 2. 获取汇率数据
           usd, eur = get_rate()
 
+          # 3. 准备推送内容
           if usd and eur:
               title = f"汇率实时播报 [{bj_time}]"
               body = f"🇺🇸 USD/CNY: {usd}\n🇪🇺 EUR/CNY: {eur}"
@@ -67,15 +72,21 @@ jobs:
               title = "汇率获取失败"
               body = "API 响应异常，请检查 Actions 日志中的报错信息"
 
+          # 4. 执行 Bark 推送
           encoded_title = quote(title)
           encoded_body = quote(body)
           
-          # 推送至 Bark
-          bark_url = f"https://api.day.app/{bark_key}?title={encoded_title}&body={encoded_body}&icon=https://api.iconify.design/fc:currency-exchange.svg&group=Finance&autoCopy=1"
+          # 关键修改：group 参数已改为 Currency Rate
+          # icon: 使用彩色货币兑换图标
+          # autoCopy: 1 表示收到推送时自动复制内容
+          bark_url = f"https://api.day.app/{bark_key}?title={encoded_title}&body={encoded_body}&icon=https://api.iconify.design/fc:currency-exchange.svg&group=Currency%20Rate&autoCopy=1"
           
           try:
-              requests.get(bark_url, timeout=10)
-              print("推送已发送至 Bark")
+              r = requests.get(bark_url, timeout=10)
+              if r.status_code == 200:
+                  print("推送已成功发送至 Bark，分组：Currency Rate")
+              else:
+                  print(f"Bark 推送返回状态码: {r.status_code}")
           except Exception as e:
               print(f"推送出错: {e}")
           EOF
